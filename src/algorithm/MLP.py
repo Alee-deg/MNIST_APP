@@ -669,6 +669,29 @@ class MLP:
         self.count_training_time = end_time - start_time
         return self
 
+    @staticmethod
+    def _inference_tensor(features: FeatureArray) -> torch.Tensor:
+        """Convert features, even when Torch's NumPy bridge is unavailable."""
+        try:
+            return torch.as_tensor(features, dtype=torch.float32)
+        except RuntimeError as error:
+            if "numpy is not available" not in str(error).lower():
+                raise
+            return torch.tensor(features.tolist(), dtype=torch.float32).reshape(features.shape)
+
+    @staticmethod
+    def _inference_array(
+        tensor: torch.Tensor, dtype: np.dtype,
+    ) -> NDArray:
+        """Return an array without the native NumPy bridge when necessary."""
+        tensor = tensor.cpu()
+        try:
+            return tensor.numpy()
+        except RuntimeError as error:
+            if "numpy is not available" not in str(error).lower():
+                raise
+            return np.asarray(tensor.tolist(), dtype=dtype).reshape(tuple(tensor.shape))
+
     def predict(self, X: FeatureArray):
         """
         Predict the original class label for each input sample.
@@ -686,7 +709,7 @@ class MLP:
         if self.model_ is None:
             raise ValueError("Model has not been fitted yet.")
 
-        X = torch.as_tensor(X, dtype=torch.float32)
+        X = self._inference_tensor(X)
 
         # Gradients are unnecessary during inference.
         with torch.no_grad():
@@ -696,14 +719,14 @@ class MLP:
                 train=False
             )
 
-            y_pred = logits.argmax(dim=1).cpu().numpy()
+            y_pred = self._inference_array(logits.argmax(dim=1), np.dtype(np.int64))
 
         return self.classes_[y_pred]
     def predict_proba(self, X: FeatureArray):
         if self.model_ is None:
             raise ValueError("Model has not been fitted yet.")
 
-        X = torch.as_tensor(X, dtype=torch.float32)
+        X = self._inference_tensor(X)
 
         # no need to compute gradients when predict
         with torch.no_grad():
@@ -715,7 +738,7 @@ class MLP:
 
             z = logits - logits.max(dim=1, keepdim=True).values
             probs = torch.exp(z) / torch.exp(z).sum(dim=1, keepdim=True)
-            return probs.cpu().numpy()
+            return self._inference_array(probs, np.dtype(np.float32))
 
     def predict_prob(self, X: FeatureArray):
         """
@@ -735,7 +758,7 @@ class MLP:
         if self.model_ is None:
             raise ValueError("Model has not been fitted yet.")
 
-        X = torch.as_tensor(X, dtype=torch.float32)
+        X = self._inference_tensor(X)
 
         with torch.no_grad():
             logits, _ = MLP.forward_with_cache(
@@ -744,7 +767,7 @@ class MLP:
                 train=False
             )
 
-            prob = torch.softmax(logits, dim=1).cpu().numpy()
+            prob = self._inference_array(torch.softmax(logits, dim=1), np.dtype(np.float32))
 
         return prob * 100
 

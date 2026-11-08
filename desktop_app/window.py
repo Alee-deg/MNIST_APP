@@ -1,10 +1,11 @@
 """Dark desktop workspace for comparing handwritten-digit predictions."""
 
 from concurrent.futures import Future, ThreadPoolExecutor
+from io import BytesIO
 import tkinter as tk
 from tkinter import filedialog, ttk
 
-from PIL import Image, ImageDraw, ImageOps, ImageTk
+from PIL import Image, ImageDraw, ImageOps
 
 from .inference import AUGMENTATION, MODELS, ModelResult, ModelStore
 
@@ -42,8 +43,8 @@ class DigitStudio:
         self.last_point: tuple[int, int] | None = None
         self.mode = "draw"
         self.eraser = False
-        self.canvas_photo: ImageTk.PhotoImage | None = None
-        self.preview_photo: ImageTk.PhotoImage | None = None
+        self.canvas_photo: tk.PhotoImage | None = None
+        self.preview_photo: tk.PhotoImage | None = None
         self.brush = tk.IntVar(value=21)
         self.status = tk.StringVar(value="Sẵn sàng · Vẽ hoặc tải ảnh để bắt đầu.")
         self._build()
@@ -203,11 +204,17 @@ class DigitStudio:
         """Display the current brush width in pixels."""
         self.brush_text.configure(text=f"{round(float(value))} px")
 
+    def _photo_image(self, image: Image.Image) -> tk.PhotoImage:
+        """Load PNG bytes using Tk's native decoder."""
+        with BytesIO() as buffer:
+            image.save(buffer, format="PNG")
+            return tk.PhotoImage(data=buffer.getvalue(), format="png", master=self.root)
+
     def _display(self, image: Image.Image) -> None:
         """Show a fitted copy of the drawing or uploaded image."""
         view = image.copy()
         view.thumbnail((SIZE, SIZE), Image.Resampling.LANCZOS)
-        self.canvas_photo = ImageTk.PhotoImage(view, master=self.root)
+        self.canvas_photo = self._photo_image(view)
         self.canvas.delete("all")
         self.canvas.create_image(SIZE // 2, SIZE // 2, image=self.canvas_photo)
 
@@ -355,8 +362,7 @@ class DigitStudio:
 
     def _show_results(self, preview: Image.Image, results: list[ModelResult]) -> None:
         """Display the prepared digit and one card per selected model."""
-        self.preview_photo = ImageTk.PhotoImage(preview.resize((56, 56), Image.Resampling.NEAREST),
-                                                master=self.root)
+        self.preview_photo = self._photo_image(preview.resize((56, 56), Image.Resampling.NEAREST))
         self.preview.create_image(32, 32, image=self.preview_photo)
         for widget in self.results.winfo_children():
             widget.destroy()
